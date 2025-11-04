@@ -1,0 +1,270 @@
+* {
+  margin: 0;
+  padding: 0;
+  font-family: "Arial", sans-serif;
+}
+
+.banner {
+  width: 100%;
+  height: 100vh;
+  background-image: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)),
+    url("../public/background.jpg");
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 30px;
+}
+
+.navbar {
+  width: 85%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  width: 200px;
+  cursor: pointer;
+}
+
+.navbar ul {
+  display: flex;
+  list-style: none;
+  padding: 0;
+}
+
+.navbar ul li {
+  list-style: none;
+  display: inline-block;
+  margin: 0 20px;
+  position: relative;
+}
+
+.navbar ul li a {
+  text-decoration: none;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.navbar ul li ::after {
+  content: "";
+  height: 3px;
+  width: 0;
+  background: #009688;
+  position: absolute;
+  left: 0;
+  bottom: -10px;
+  transition: 0.5s;
+}
+
+.navbar ul li :hover:after {
+  width: 100%;
+}
+
+.content {
+  width: 100%;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  color: #fff;
+}
+
+.content h1 {
+  font-size: 70px;
+  margin-top: 80px;
+}
+
+.content p {
+  margin: 20px auto;
+  font-weight: 100;
+  line-height: 25px;
+}
+
+button {
+  width: 200px;
+  padding: 15px 0;
+  text-align: center;
+  margin: 20px 10px;
+  border-radius: 25px;
+  font-weight: bold;
+  border: 2px solid #009688;
+  background: #009688;
+  color: #fff;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: background-color 0.5s ease;
+}
+
+span {
+  background: #fff;
+  height: 100%;
+  width: 0%;
+  border-radius: 25px;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: -1;
+  transition: width 0.5s ease, background-color 0.5s ease;
+}
+
+button:hover span {
+  width: 0%;
+}
+
+button:hover {
+  background: transparent;
+  color: #009688;
+  border: 2px solid #009688;
+}
+
+#plz-input {
+  width: 280px; /* Same width as the button for alignment */
+  padding: 15px;
+  border-radius: 35px;
+  border: 2px solid #009688;
+  background: transparent;
+  color: #fff;
+  margin-right: 10px; /* Space between input and button */
+  outline: none; /* Remove default focus outline */
+}
+
+#plz-input::placeholder {
+  color: #fff;
+  font-weight: 800; /* Darker color for placeholder text to ensure readability */
+}
+
+#search-form {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 20px auto;
+}
+
+.container {
+  max-width: 800px;
+  margin: auto;
+  padding: 20px;
+  text-align: center;
+}
+
+.packages {
+  display: flex;
+  justify-content: space-around;
+  margin: 20px 0;
+}
+
+.package {
+  border: 1px solid #009688;
+  padding: 20px;
+  margin: 10px;
+  cursor: pointer;
+  border-radius: 8px;
+  background-color: white; /* Ensure background is white for readability */
+  width: 30%; /* Makes the packages equally spaced and aligned */
+}
+
+.package:hover {
+  background-color: #f0f0f0; /* Light grey background on hover */
+}
+
+input[type="date"],
+input[type="range"] {
+  width: 80%;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+button.book-button {
+  width: 200px;
+  padding: 15px 0;
+  text-align: center;
+  margin: 20px auto;
+  border-radius: 25px;
+  font-weight: bold;
+  border: 2px solid #009688;
+  background-color: #009688;
+  color: white;
+  cursor: pointer;
+}
+
+button.book-button:hover {
+  background: transparent;
+  color: #009688;
+}
+
+.duration-selection {
+  text-align: center;
+  margin: 20px 0;
+}
+
+.slider-container {
+  position: relative;
+  padding: 20px;
+}
+
+.duration-display {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-bottom: 20px; /* Adjust this value as needed to position the label right below the slider */
+  font-size: 16px; /* Set an appropriate font size */
+}
+
+input[type="range"] {
+  -webkit-appearance: none; /* Override default appearance */
+  width: 100%; /* Full width */
+  background: transparent; /* No background */
+  cursor: pointer;
+  height: 14px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 25px; /* Width of the thumb */
+  height: 20px; /* Height of the thumb */
+  border-radius: 50%; /* Make it circular */
+  background: #009688; /* Thumb color */
+  margin-top: -5.5px;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 7px;
+  background: #ddd;
+  border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .banner {
+    height: auto; /* Adjust height on smaller screens */
+  }
+
+  .content h1 {
+    font-size: 40px; /* Smaller font size for smaller screens */
+  }
+
+  .navbar ul {
+    flex-direction: column; /* Stack navbar items vertically */
+    align-items: center;
+  }
+
+  .navbar ul li {
+    margin: 10px 0; /* Increase space between menu items */
+  }
+
+  #plz-input,
+  button {
+    width: 90%; /* Full width on smaller devices */
+    margin: 10px auto; /* Center align the form elements */
+  }
+
+  .packages {
+    flex-direction: column; /* Stack packages vertically on smaller screens */
+  }
+}
