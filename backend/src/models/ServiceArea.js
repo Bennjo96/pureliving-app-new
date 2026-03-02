@@ -51,7 +51,7 @@ const serviceAreaSchema = new mongoose.Schema({
   // Available services in this area
   availableServices: {
     type: [String],
-    default: ['Regular Cleaning', 'Deep Cleaning', 'Move-In/Move-Out Cleaning', 'Office Cleaning']
+    default: ['Regular Cleaning', 'Deep Cleaning', 'Move-In/Move-Out Cleaning', 'Office Cleaning', 'Window Cleaning']
   },
   
   // Base pricing for this area (can vary by location)
@@ -71,6 +71,10 @@ const serviceAreaSchema = new mongoose.Schema({
     officeCleaning: {
       type: Number,
       default: 30 // per hour
+    },
+    windowCleaning: {
+      type: Number,
+      default: 20 // per hour
     }
   },
   
@@ -197,42 +201,49 @@ serviceAreaSchema.methods.estimateTravelTime = function(longitude, latitude) {
 // Method to update service area statistics
 serviceAreaSchema.methods.updateStats = async function() {
   try {
-    // Count active cleaners in this service area
     const User = mongoose.model('User');
+    const Booking = mongoose.model('Booking');
+    const SystemSetting = mongoose.model('SystemSetting');
+
+    // Count active cleaners in this service area
     const cleanerCount = await User.countDocuments({
       roles: 'cleaner',
       isActive: true,
-      'serviceAreas': this.postalCode
+      serviceAreas: this.postalCode
     });
-    
+
     // Get booking metrics for the last 4 weeks
     const fourWeeksAgo = new Date();
     fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-    
-    const Booking = mongoose.model('Booking');
-    const bookings = await Booking.find({
+
+    const bookingCount = await Booking.countDocuments({
       'address.postalCode': this.postalCode,
       createdAt: { $gte: fourWeeksAgo }
     });
-    
-    // Calculate average bookings per week
-    const averageBookingsPerWeek = bookings.length / 4;
-    
-    // Update demand level based on cleaner to booking ratio
+
+    const averageBookingsPerWeek = bookingCount / 4;
+
+    // Read configurable thresholds from SystemSetting, fall back to defaults
+    const [highThreshold, lowThreshold] = await Promise.all([
+      SystemSetting.getByKey('serviceArea.demandHighThreshold').catch(() => null),
+      SystemSetting.getByKey('serviceArea.demandLowThreshold').catch(() => null)
+    ]);
+    const highRatio = (highThreshold != null) ? highThreshold : 3;
+    const lowRatio  = (lowThreshold  != null) ? lowThreshold  : 1;
+
     let demandLevel = 'medium';
     if (cleanerCount === 0) {
       demandLevel = 'high';
     } else {
       const ratio = averageBookingsPerWeek / cleanerCount;
-      if (ratio > 3) demandLevel = 'high';
-      else if (ratio < 1) demandLevel = 'low';
+      if (ratio > highRatio) demandLevel = 'high';
+      else if (ratio < lowRatio) demandLevel = 'low';
     }
-    
-    // Update the service area
+
     this.cleanerCount = cleanerCount;
     this.averageBookingsPerWeek = averageBookingsPerWeek;
     this.demandLevel = demandLevel;
-    
+
     return this.save();
   } catch (error) {
     console.error('Error updating service area stats:', error);
@@ -246,9 +257,10 @@ serviceAreaSchema.methods.getPriceForService = function(serviceType) {
     'Regular Cleaning': this.pricing.regularCleaning,
     'Deep Cleaning': this.pricing.deepCleaning,
     'Move-In/Move-Out Cleaning': this.pricing.moveInOutCleaning,
-    'Office Cleaning': this.pricing.officeCleaning
+    'Office Cleaning': this.pricing.officeCleaning,
+    'Window Cleaning': this.pricing.windowCleaning
   };
-  
+
   return serviceMap[serviceType] || this.pricing.regularCleaning;
 };
 

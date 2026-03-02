@@ -1,6 +1,7 @@
 // backend/src/server.js
 const app = require('./app');
 const connectDB = require('./config/db');
+const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
 const os = require('os');

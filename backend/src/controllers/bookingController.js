@@ -9,39 +9,39 @@ const geoUtils = require('../utils/geoUtils');
 exports.createBooking = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { service, date, time, duration, address, notes, cleanerId } = req.body;
-    
+    const { service, date, time, duration, address, notes, cleanerId, pricing, serviceName } = req.body;
+
+    // Resolve service name — may come as a type string or a display name from the context
+    const resolvedService = service || serviceName;
+
     // Validate input
-    if (!service || !date || !time || !duration || !address) {
+    if (!resolvedService || !date || !time || !duration || !address) {
       return res.status(400).json({
         success: false,
         message: 'Please provide all required booking details'
       });
     }
-    
-    // Calculate price based on service and duration
-    let price = 0;
-    switch (service) {
-      case 'Regular Cleaning':
-        price = 50 * duration;
-        break;
-      case 'Deep Cleaning':
-        price = 70 * duration;
-        break;
-      case 'Move-In/Move-Out Cleaning':
-        price = 90 * duration;
-        break;
-      case 'Office Cleaning':
-        price = 60 * duration;
-        break;
-      default:
-        price = 50 * duration;
+
+    // Use the frontend-calculated total when provided (includes add-ons, discounts, VAT).
+    // Fall back to a simple server-side calculation only when no pricing is sent.
+    let price;
+    if (pricing && pricing.total && pricing.total > 0) {
+      price = pricing.total;
+    } else {
+      const hourlyRates = {
+        'Regular Cleaning': 50,
+        'Deep Cleaning': 70,
+        'Move-In/Move-Out Cleaning': 90,
+        'Office Cleaning': 60,
+        'Window Cleaning': 40
+      };
+      price = (hourlyRates[resolvedService] || 50) * duration;
     }
-    
+
     // Create new booking
     const booking = new Booking({
       user: userId,
-      service,
+      service: resolvedService,
       date: new Date(date),
       time,
       duration,
@@ -51,9 +51,9 @@ exports.createBooking = async (req, res) => {
       cleaner: cleanerId || null,
       status: cleanerId ? 'confirmed' : 'pending'
     });
-    
+
     await booking.save();
-    
+
     res.status(201).json({
       success: true,
       message: 'Booking created successfully',
@@ -305,30 +305,20 @@ exports.updateBooking = async (req, res) => {
     if (address) booking.address = address;
     if (notes !== undefined) booking.notes = notes;
     
-    // Recalculate price if service or duration changed
-    if (service || duration) {
-      let price = 0;
+    // Recalculate price if service or duration changed and no explicit price provided
+    if ((service || duration) && !req.body.price) {
       const currentService = service || booking.service;
       const currentDuration = duration || booking.duration;
-      
-      switch (currentService) {
-        case 'Regular Cleaning':
-          price = 50 * currentDuration;
-          break;
-        case 'Deep Cleaning':
-          price = 70 * currentDuration;
-          break;
-        case 'Move-In/Move-Out Cleaning':
-          price = 90 * currentDuration;
-          break;
-        case 'Office Cleaning':
-          price = 60 * currentDuration;
-          break;
-        default:
-          price = 50 * currentDuration;
-      }
-      
-      booking.price = price;
+      const hourlyRates = {
+        'Regular Cleaning': 50,
+        'Deep Cleaning': 70,
+        'Move-In/Move-Out Cleaning': 90,
+        'Office Cleaning': 60,
+        'Window Cleaning': 40
+      };
+      booking.price = (hourlyRates[currentService] || 50) * currentDuration;
+    } else if (req.body.price) {
+      booking.price = req.body.price;
     }
     
     await booking.save();

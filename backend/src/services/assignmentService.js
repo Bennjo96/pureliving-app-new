@@ -5,6 +5,8 @@ const Booking = require('../models/Booking');
 const Review = require('../models/Review');
 const ServiceArea = require('../models/ServiceArea');
 const SystemSetting = require('../models/SystemSetting');
+const Notification = require('../models/Notification');
+const sendEmail = require('../utils/sendEmail');
 const geoUtils = require('../utils/geoUtils');
 
 /**
@@ -535,48 +537,71 @@ const assignmentService = {
    * Send notifications about assignment
    */
   async sendAssignmentNotifications(booking) {
-    try {
-      // This would integrate with your notification system
-      // For now, we'll log the notifications we would send
-      
-      console.log(`[NOTIFICATION] To Cleaner (${booking.cleaner._id}): You have been assigned a new ${booking.service} on ${new Date(booking.date).toLocaleDateString()} at ${booking.time}`);
-      
-      console.log(`[NOTIFICATION] To Customer (${booking.user._id}): Your booking on ${new Date(booking.date).toLocaleDateString()} has been assigned to ${booking.cleaner.name}`);
-      
-      // In a full implementation, you would:
-      // 1. Create notification records in your database
-      // 2. Send push notifications if applicable
-      // 3. Send emails
-      // 4. Trigger any other notification channels (SMS, etc.)
-      
-      // For example:
-      /*
-      const NotificationService = require('./notificationService');
-      
-      // Notify cleaner
-      await NotificationService.create({
-        user: booking.cleaner._id,
-        title: 'New Cleaning Job Assigned',
-        message: `You have been assigned a new ${booking.service} on ${new Date(booking.date).toLocaleDateString()} at ${booking.time}`,
-        type: 'assignment',
-        referenceType: 'booking',
-        referenceId: booking._id
-      });
-      
-      // Notify customer
-      await NotificationService.create({
-        user: booking.user._id,
+    const bookingDate = new Date(booking.date).toLocaleDateString('en-GB', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    // --- In-app notifications ---
+    const notificationPromises = [
+      Notification.create({
+        recipient: booking.cleaner._id,
+        type: 'booking',
+        title: 'New Job Assigned',
+        message: `You have been assigned a ${booking.service} on ${bookingDate} at ${booking.time}.`,
+        relatedId: booking._id,
+        relatedModel: 'Booking',
+        link: `/cleaner/jobs/${booking._id}`
+      }),
+      Notification.create({
+        recipient: booking.user._id,
+        type: 'booking',
         title: 'Cleaner Assigned',
-        message: `Your booking on ${new Date(booking.date).toLocaleDateString()} has been assigned to ${booking.cleaner.name}`,
-        type: 'assignment',
-        referenceType: 'booking',
-        referenceId: booking._id
-      });
-      */
-    } catch (error) {
-      console.error('Error sending assignment notifications:', error);
-      // Don't throw here, as assignment itself was successful
-    }
+        message: `Your booking on ${bookingDate} has been assigned to ${booking.cleaner.name}.`,
+        relatedId: booking._id,
+        relatedModel: 'Booking',
+        link: `/booking/track/${booking._id}`
+      })
+    ];
+
+    await Promise.all(notificationPromises).catch(err =>
+      console.error('Error creating assignment notifications:', err)
+    );
+
+    // --- Emails (non-blocking — failures must not abort the assignment) ---
+    const emailPromises = [
+      sendEmail({
+        to: booking.cleaner.email,
+        subject: 'New Cleaning Job Assigned',
+        html: `
+          <div style="font-family:sans-serif">
+            <h2>New Job Assignment</h2>
+            <p>Hi ${booking.cleaner.name},</p>
+            <p>You have been assigned a new <strong>${booking.service}</strong> on
+               <strong>${bookingDate}</strong> at <strong>${booking.time}</strong>.</p>
+            <p>Log in to your dashboard to view the full details.</p>
+          </div>
+        `,
+        text: `Hi ${booking.cleaner.name}, you have been assigned a new ${booking.service} on ${bookingDate} at ${booking.time}. Log in to your dashboard for details.`
+      }).catch(err => console.error('Error sending cleaner assignment email:', err)),
+
+      sendEmail({
+        to: booking.user.email,
+        subject: 'Your Cleaner Has Been Assigned',
+        html: `
+          <div style="font-family:sans-serif">
+            <h2>Booking Confirmed</h2>
+            <p>Hi ${booking.user.name},</p>
+            <p>Great news! Your <strong>${booking.service}</strong> on
+               <strong>${bookingDate}</strong> at <strong>${booking.time}</strong>
+               has been assigned to <strong>${booking.cleaner.name}</strong>.</p>
+            <p>You can track your booking status at any time from your dashboard.</p>
+          </div>
+        `,
+        text: `Hi ${booking.user.name}, your ${booking.service} on ${bookingDate} at ${booking.time} has been assigned to ${booking.cleaner.name}.`
+      }).catch(err => console.error('Error sending customer assignment email:', err))
+    ];
+
+    await Promise.all(emailPromises);
   },
   
   /**

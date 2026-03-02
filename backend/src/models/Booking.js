@@ -15,7 +15,7 @@ const bookingSchema = new mongoose.Schema(
     service: {
       type: String,
       required: true,
-      enum: ['Deep Cleaning', 'Regular Cleaning', 'Move-In/Move-Out Cleaning', 'Office Cleaning'],
+      enum: ['Deep Cleaning', 'Regular Cleaning', 'Move-In/Move-Out Cleaning', 'Office Cleaning', 'Window Cleaning'],
     },
     date: { 
       type: Date, 

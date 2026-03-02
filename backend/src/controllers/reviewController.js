@@ -9,7 +9,7 @@ exports.getCleanerReviews = async (req, res) => {
     const { id } = req.params;
     
     // Ensure the cleaner exists
-    const cleaner = await User.findOne({ _id: id, role: 'cleaner' });
+    const cleaner = await User.findOne({ _id: id, roles: 'cleaner' });
     if (!cleaner) {
       return res.status(404).json({
         success: false,
@@ -215,7 +215,7 @@ exports.deleteReview = async (req, res) => {
     }
     
     // Check if the user is the review owner or an admin
-    if (review.user.toString() !== req.user.id && req.user.role !== 'admin') {
+    if (review.user.toString() !== req.user.id && !req.user.roles?.includes('admin')) {
       return res.status(403).json({
         success: false,
         message: 'You can only delete your own reviews'

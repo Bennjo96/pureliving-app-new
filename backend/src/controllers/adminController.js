@@ -1,8 +1,11 @@
 const User = require('../models/User');
 const Booking = require('../models/Booking');
-const Payment = require('../models/Payment'); // Assuming you have a Payment model
-const Notification = require('../models/Notification'); // Assuming you have a Notification model
-const SystemSetting = require('../models/SystemSetting'); // Assuming you have a SystemSetting model
+const Payment = require('../models/Payment');
+const Notification = require('../models/Notification');
+const Review = require('../models/Review');
+const Conversation = require('../models/Conversation');
+const Message = require('../models/Message');
+const SystemSetting = require('../models/SystemSetting');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -52,13 +55,13 @@ exports.getDashboard = async (req, res, next) => {
     
     // Get active cleaners count
     const activeCleaners = await User.countDocuments({
-      role: 'cleaner',
+      roles: 'cleaner',
       $or: [{ status: 'active' }, { status: { $exists: false } }]
     });
     
     // Get pending cleaners count for notifications
     const pendingCleaners = await User.countDocuments({
-      role: 'cleaner',
+      roles: 'cleaner',
       status: 'pending'
     });
     
@@ -235,7 +238,7 @@ exports.getDashboard = async (req, res, next) => {
       id: user._id,
       name: user.name,
       email: user.email,
-      type: user.role,
+      type: (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'client'),
       joined: user.createdAt
     }));
     
@@ -276,63 +279,74 @@ exports.getDashboard = async (req, res, next) => {
 // Get all cleaners
 exports.getCleaners = async (req, res, next) => {
   try {
-    // Find all users with role = 'cleaner'
-    const cleaners = await User.find({ role: 'cleaner' })
-      .lean();
-    
-    // Transform to the format expected by the CleanerManagement component
-    const formattedCleaners = await Promise.all(cleaners.map(async cleaner => {
-      // Split the name into first and last name for display
-      const nameParts = cleaner.name.split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
-      
-      // Get actual cleaner stats from completed bookings
-      const completedBookings = await Booking.find({
-        cleaner: cleaner._id,
-        status: 'completed'
-      }).lean();
-      
-      const jobsCompleted = completedBookings.length;
-      
-      // Get reviews from bookings
-      const reviewCount = completedBookings.filter(booking => booking.rating).length;
-      
-      // Calculate average rating
-      const totalRating = completedBookings.reduce((sum, booking) => sum + (booking.rating || 0), 0);
-      const rating = reviewCount > 0 ? (totalRating / reviewCount).toFixed(1) : 0;
-      
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 50);
+    const skip  = (page - 1) * limit;
+
+    const [cleaners, total] = await Promise.all([
+      User.find({ roles: 'cleaner' })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments({ roles: 'cleaner' })
+    ]);
+
+    // Fetch all completed-booking stats in one query (avoids N+1)
+    const cleanerIds = cleaners.map(c => c._id);
+    const bookingStats = await Booking.aggregate([
+      { $match: { cleaner: { $in: cleanerIds }, status: 'completed' } },
+      {
+        $group: {
+          _id: '$cleaner',
+          jobsCompleted: { $sum: 1 },
+          totalRating:   { $sum: { $ifNull: ['$review.rating', 0] } },
+          reviewCount:   { $sum: { $cond: [{ $gt: ['$review.rating', 0] }, 1, 0] } }
+        }
+      }
+    ]);
+
+    const statsMap = {};
+    bookingStats.forEach(s => { statsMap[s._id.toString()] = s; });
+
+    const formattedCleaners = cleaners.map(cleaner => {
+      const nameParts = (cleaner.name || '').split(' ');
+      const stats = statsMap[cleaner._id.toString()] || { jobsCompleted: 0, totalRating: 0, reviewCount: 0 };
+      const rating = stats.reviewCount > 0
+        ? (stats.totalRating / stats.reviewCount).toFixed(1)
+        : 0;
+
       return {
         _id: cleaner._id.toString(),
-        firstName,
-        lastName,
+        firstName: nameParts[0] || '',
+        lastName: nameParts.slice(1).join(' ') || '',
         email: cleaner.email,
         phone: cleaner.phone || '',
-        address: cleaner.addresses && cleaner.addresses.length > 0 
-          ? `${cleaner.addresses[0].street}, ${cleaner.addresses[0].city}` 
+        address: cleaner.addresses && cleaner.addresses.length > 0
+          ? `${cleaner.addresses[0].street}, ${cleaner.addresses[0].city}`
           : '',
         status: cleaner.status || 'active',
         rating,
-        reviewCount,
-        jobsCompleted,
+        reviewCount: stats.reviewCount,
+        jobsCompleted: stats.jobsCompleted,
         rate: cleaner.rate || 0,
         services: cleaner.services || [],
         serviceAreas: cleaner.serviceAreas || [],
         bio: cleaner.bio || '',
         createdAt: cleaner.createdAt
       };
-    }));
-    
-    res.status(200).json({ 
-      success: true, 
-      cleaners: formattedCleaners 
+    });
+
+    res.status(200).json({
+      success: true,
+      cleaners: formattedCleaners,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
     console.error('Error fetching cleaners:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to load cleaners',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -606,25 +620,43 @@ exports.approveCleaner = async (req, res, next) => {
 exports.deleteCleaner = async (req, res, next) => {
   try {
     const { id } = req.params;
-    
-    const deletedCleaner = await User.findByIdAndDelete(id);
-    
-    if (!deletedCleaner) {
+
+    const cleaner = await User.findById(id);
+    if (!cleaner) {
       return res.status(404).json({
         success: false,
         message: 'Cleaner not found'
       });
     }
-    
+
+    // Cascade: remove all data owned by or referencing this cleaner
+    const conversationIds = await Conversation.find(
+      { participants: id },
+      '_id'
+    ).lean().then(docs => docs.map(d => d._id));
+
+    await Promise.all([
+      Booking.updateMany({ cleaner: id }, { $unset: { cleaner: 1 }, $set: { status: 'needs_assignment' } }),
+      Review.deleteMany({ cleaner: id }),
+      Notification.deleteMany({ recipient: id }),
+      Payment.deleteMany({ user: id }),
+      Message.deleteMany({ sender: id }),
+      Conversation.deleteMany({ participants: id }),
+      conversationIds.length
+        ? Message.deleteMany({ conversation: { $in: conversationIds } })
+        : Promise.resolve()
+    ]);
+
+    await User.findByIdAndDelete(id);
+
     // Create system notification
     await Notification.create({
       type: 'system',
       title: 'Cleaner Deleted',
-      message: `${deletedCleaner.name}'s account has been deleted from the system.`,
-      priority: 'medium',
-      status: 'unread'
+      message: `${cleaner.name}'s account has been deleted from the system.`,
+      recipient: req.user.id
     });
-    
+
     res.status(200).json({
       success: true,
       message: 'Cleaner deleted successfully'
@@ -644,10 +676,20 @@ exports.deleteCleaner = async (req, res, next) => {
 // Get all bookings
 exports.getAllBookings = async (req, res, next) => {
   try {
-    const bookings = await Booking.find()
-      .populate('user', 'name email')
-      .populate('cleaner', 'name');
-      
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 50);
+    const skip  = (page - 1) * limit;
+
+    const [bookings, total] = await Promise.all([
+      Booking.find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('user', 'name email')
+        .populate('cleaner', 'name'),
+      Booking.countDocuments()
+    ]);
+
     // Format bookings for the admin dashboard
     const formattedBookings = bookings.map(booking => ({
       id: booking._id,
@@ -668,9 +710,10 @@ exports.getAllBookings = async (req, res, next) => {
       recurring: booking.isRecurring || false
     }));
     
-    res.status(200).json({ 
-      success: true, 
-      bookings: formattedBookings 
+    res.status(200).json({
+      success: true,
+      bookings: formattedBookings,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
     console.error('Error fetching bookings:', error);
@@ -747,7 +790,7 @@ exports.assignCleaner = async (req, res, next) => {
     }
 
     // Verify the cleaner exists
-    const cleaner = await User.findOne({ _id: cleanerId, role: 'cleaner' });
+    const cleaner = await User.findOne({ _id: cleanerId, roles: 'cleaner' });
     if (!cleaner) {
       return res.status(404).json({
         success: false,
@@ -838,7 +881,7 @@ exports.reassignBooking = async (req, res, next) => {
     }
     
     // Verify the cleaner exists
-    const cleaner = await User.findOne({ _id: cleanerId, role: 'cleaner' });
+    const cleaner = await User.findOne({ _id: cleanerId, roles: 'cleaner' });
     if (!cleaner) {
       return res.status(404).json({
         success: false,
@@ -975,46 +1018,57 @@ exports.createUser = async (req, res, next) => {
 // Get all users
 exports.getAllUsers = async (req, res, next) => {
   try {
-    const users = await User.find().lean();
-    
-    // Get bookings for each user to calculate stats
-    const formattedUsers = await Promise.all(users.map(async user => {
-      // Get user's bookings
-      const userBookings = await Booking.find({ user: user._id }).lean();
-      
-      // Calculate total spent
-      const totalSpent = userBookings.reduce((sum, booking) => sum + (booking.amount || 0), 0);
-      
-      // Extract role from roles array
-      let role = 'client'; // Default role
-      if (user.roles && user.roles.length > 0) {
-        role = user.roles[0]; // Take first role from array
-      } else if (user.role) {
-        // For backward compatibility with old data
-        role = user.role;
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 50);
+    const skip  = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find().skip(skip).limit(limit).lean(),
+      User.countDocuments()
+    ]);
+
+    // Aggregate booking counts + total spend in one query (avoids N+1)
+    const userIds = users.map(u => u._id);
+    const bookingStats = await Booking.aggregate([
+      { $match: { user: { $in: userIds } } },
+      {
+        $group: {
+          _id: '$user',
+          totalBookings: { $sum: 1 },
+          totalSpent:    { $sum: { $ifNull: ['$amount', 0] } }
+        }
       }
-      
+    ]);
+
+    const statsMap = {};
+    bookingStats.forEach(s => { statsMap[s._id.toString()] = s; });
+
+    const formattedUsers = users.map(user => {
+      const stats = statsMap[user._id.toString()] || { totalBookings: 0, totalSpent: 0 };
+      const role = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'client');
+
       return {
         _id: user._id.toString(),
         name: user.name,
         email: user.email,
         phone: user.phone || '',
-        role: role, // Use the extracted role
+        role,
         status: user.status || 'active',
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
-        totalBookings: userBookings.length,
-        totalSpent,
-        address: user.addresses && user.addresses.length > 0 
-          ? `${user.addresses[0].street || ''}, ${user.addresses[0].city || ''}` 
+        totalBookings: stats.totalBookings,
+        totalSpent: stats.totalSpent,
+        address: user.addresses && user.addresses.length > 0
+          ? `${user.addresses[0].street || ''}, ${user.addresses[0].city || ''}`
           : '',
         adminNotes: user.adminNotes || ''
       };
-    }));
-    
-    res.status(200).json({ 
-      success: true, 
-      data: formattedUsers 
+    });
+
+    res.status(200).json({
+      success: true,
+      data: formattedUsers,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -1100,15 +1154,32 @@ exports.deleteUser = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const deletedUser = await User.findByIdAndDelete(id);
+    // Cascade: remove all data owned by or referencing this user
+    const conversationIds = await Conversation.find(
+      { participants: id },
+      '_id'
+    ).lean().then(docs => docs.map(d => d._id));
+
+    await Promise.all([
+      Booking.deleteMany({ user: id }),
+      Review.deleteMany({ $or: [{ user: id }, { cleaner: id }] }),
+      Notification.deleteMany({ recipient: id }),
+      Payment.deleteMany({ user: id }),
+      Message.deleteMany({ sender: id }),
+      Conversation.deleteMany({ participants: id }),
+      conversationIds.length
+        ? Message.deleteMany({ conversation: { $in: conversationIds } })
+        : Promise.resolve()
+    ]);
+
+    await User.findByIdAndDelete(id);
 
     // Create system notification
     await Notification.create({
       type: 'system',
       title: 'User Deleted',
       message: `User ${user.name} (${user.email}) has been deleted from the system.`,
-      priority: 'medium',
-      status: 'unread'
+      recipient: req.user.id
     });
 
     res.status(200).json({ success: true, message: 'User deleted successfully' });
@@ -1151,13 +1222,13 @@ exports.exportAnalytics = async (req, res, next) => {
 
     // Active Cleaners
     const activeCleaners = await User.countDocuments({ 
-      role: 'cleaner',
+      roles: 'cleaner',
       $or: [{ status: 'active' }, { status: { $exists: false } }]
     });
 
     // Pending Cleaners
     const pendingCleaners = await User.countDocuments({ 
-      role: 'cleaner',
+      roles: 'cleaner',
       status: 'pending'
     });
 

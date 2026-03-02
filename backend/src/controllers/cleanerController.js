@@ -2,6 +2,7 @@
 const User = require("../models/User");
 const Booking = require("../models/Booking");
 const Review = require('../models/Review');
+const Notification = require('../models/Notification');
 
 // Get cleaner dashboard data
 exports.getDashboard = async (req, res) => {
@@ -367,12 +368,36 @@ exports.updateAvailability = async (req, res) => {
       }));
     }
 
+    // Normalise weeklySchedule: derive startHour / endHour from the first slot
+    // when they are not explicitly provided, keeping both formats in sync for
+    // the assignment algorithm (which reads startHour/endHour) and the UI
+    // (which reads slots strings like "09:00-17:00").
+    const normalisedSchedule = weeklySchedule.map((entry) => {
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayOfWeek = entry.dayOfWeek != null
+        ? entry.dayOfWeek
+        : dayNames.indexOf((entry.day || '').toLowerCase());
+
+      let { startHour, endHour } = entry;
+
+      if (entry.available && entry.slots && entry.slots.length > 0) {
+        const firstSlot = entry.slots[0]; // e.g. "09:00-17:00"
+        const parts = firstSlot.split('-');
+        if (parts.length === 2) {
+          if (startHour == null) startHour = parseInt(parts[0].split(':')[0], 10);
+          if (endHour   == null) endHour   = parseInt(parts[1].split(':')[0], 10);
+        }
+      }
+
+      return { ...entry, dayOfWeek, startHour, endHour };
+    });
+
     // Update cleaner
     const cleaner = await User.findByIdAndUpdate(
       cleanerId,
       {
         availability: {
-          weeklySchedule,
+          weeklySchedule: normalisedSchedule,
           timeOff: formattedTimeOff,
         },
       },
@@ -673,6 +698,17 @@ exports.respondToReview = async (req, res) => {
     };
 
     await review.save();
+
+    // Notify the customer who left the review
+    await Notification.create({
+      recipient: review.user,
+      type: 'booking',
+      title: 'Your Review Received a Response',
+      message: `The cleaner has responded to your review.`,
+      relatedId: review._id,
+      relatedModel: 'Booking',
+      link: `/customer/reviews`
+    }).catch(err => console.error('Error creating review response notification:', err));
 
     res.status(200).json({
       success: true,

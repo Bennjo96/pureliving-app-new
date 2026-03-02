@@ -1,5 +1,10 @@
 const User = require("../models/User");
-const Booking = require("../models/Booking"); // Assuming you have a Booking model
+const Booking = require("../models/Booking");
+const Review = require("../models/Review");
+const Notification = require("../models/Notification");
+const Conversation = require("../models/Conversation");
+const Message = require("../models/Message");
+const Payment = require("../models/Payment");
 const bcrypt = require("bcrypt");
 
 // Get user profile
@@ -133,7 +138,25 @@ exports.deleteAccount = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Delete user
+    // Cascade: remove all data owned by or referencing this user
+    const conversationIds = await Conversation.find(
+      { participants: userId },
+      '_id'
+    ).lean().then(docs => docs.map(d => d._id));
+
+    await Promise.all([
+      Booking.deleteMany({ user: userId }),
+      Review.deleteMany({ $or: [{ user: userId }, { cleaner: userId }] }),
+      Notification.deleteMany({ recipient: userId }),
+      Payment.deleteMany({ user: userId }),
+      Message.deleteMany({ sender: userId }),
+      Conversation.deleteMany({ participants: userId }),
+      // Remove messages in conversations the user participated in
+      conversationIds.length
+        ? Message.deleteMany({ conversation: { $in: conversationIds } })
+        : Promise.resolve()
+    ]);
+
     await User.findByIdAndDelete(userId);
 
     res.status(200).json({

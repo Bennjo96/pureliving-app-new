@@ -35,7 +35,7 @@ exports.protect = async (req, res, next) => {
       // Add user to request object
       req.user = {
         id: user._id,
-        role: user.role
+        roles: user.roles
       };
       
       next();
@@ -53,10 +53,12 @@ exports.protect = async (req, res, next) => {
 // Middleware to restrict routes to specific roles
 exports.authorize = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    const userRoles = req.user.roles || [];
+    const hasRole = userRoles.some(role => roles.includes(role));
+    if (!hasRole) {
       return res.status(403).json({
         success: false,
-        message: `Role ${req.user.role} is not authorized to access this route`
+        message: `User roles [${userRoles.join(', ')}] are not authorized to access this route`
       });
     }
     next();

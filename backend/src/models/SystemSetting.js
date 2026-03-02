@@ -139,6 +139,18 @@ systemSettingSchema.statics.initializeDefaultSettings = async function() {
       value: false,
       category: 'system',
       description: 'Whether the system is in maintenance mode'
+    },
+    {
+      key: 'serviceArea.demandHighThreshold',
+      value: 3,
+      category: 'serviceArea',
+      description: 'Bookings-per-cleaner ratio above which demand is classified as high'
+    },
+    {
+      key: 'serviceArea.demandLowThreshold',
+      value: 1,
+      category: 'serviceArea',
+      description: 'Bookings-per-cleaner ratio below which demand is classified as low'
     }
   ];
 
