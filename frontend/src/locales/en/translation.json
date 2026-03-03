@@ -59,5 +59,15 @@
   "passwords_no_match": "Passwords do not match",
   "enter_email": "Please enter your email",
   "subscription_successful": "Successfully subscribed!",
-  "subscription_failed": "Subscription failed. Please try again."
+  "subscription_failed": "Subscription failed. Please try again.",
+  "Enter your address": "Enter your address or postal code",
+  "error_valid_address": "Please select a valid address from the suggestions.",
+  "error_invalid_postal_code": "A valid German postal code (5 digits) is required. Please choose a more specific address.",
+  "error_location_permission_denied": "Location access was denied by your browser. You can still type your address in the search box above.",
+  "error_location_unavailable": "Your current location could not be determined. Please enter your address manually.",
+  "error_location_timeout": "Location detection timed out. Please enter your address manually.",
+  "error_geocoding_failed": "We couldn't identify an address from your GPS position. Please enter your address manually.",
+  "error_detect_location": "Unable to detect your location. Please enter your address in the search box.",
+  "error_process_location": "Something went wrong while processing your location. Please try again.",
+  "error_geolocation_not_supported": "Your browser does not support location detection. Please type your address below."
 }

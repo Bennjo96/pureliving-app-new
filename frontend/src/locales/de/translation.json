@@ -59,5 +59,15 @@
   "passwords_no_match": "Passwörter stimmen nicht überein",
   "enter_email": "Bitte geben Sie Ihre E-Mail ein",
   "subscription_successful": "Erfolgreich abonniert!",
-  "subscription_failed": "Abonnement fehlgeschlagen. Bitte versuchen Sie es erneut."
+  "subscription_failed": "Abonnement fehlgeschlagen. Bitte versuchen Sie es erneut.",
+  "Enter your address": "Adresse oder Postleitzahl eingeben",
+  "error_valid_address": "Bitte wählen Sie eine gültige Adresse aus den Vorschlägen.",
+  "error_invalid_postal_code": "Eine gültige deutsche Postleitzahl (5 Ziffern) ist erforderlich. Bitte wählen Sie eine genauere Adresse.",
+  "error_location_permission_denied": "Der Standortzugriff wurde von Ihrem Browser abgelehnt. Sie können Ihre Adresse trotzdem oben in das Suchfeld eingeben.",
+  "error_location_unavailable": "Ihr aktueller Standort konnte nicht ermittelt werden. Bitte geben Sie Ihre Adresse manuell ein.",
+  "error_location_timeout": "Die Standortermittlung hat zu lange gedauert. Bitte geben Sie Ihre Adresse manuell ein.",
+  "error_geocoding_failed": "Wir konnten keine Adresse aus Ihrer GPS-Position ermitteln. Bitte geben Sie Ihre Adresse manuell ein.",
+  "error_detect_location": "Ihr Standort konnte nicht erkannt werden. Bitte geben Sie Ihre Adresse in das Suchfeld ein.",
+  "error_process_location": "Bei der Verarbeitung Ihres Standorts ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.",
+  "error_geolocation_not_supported": "Ihr Browser unterstützt keine Standorterkennung. Bitte geben Sie Ihre Adresse unten ein."
 }

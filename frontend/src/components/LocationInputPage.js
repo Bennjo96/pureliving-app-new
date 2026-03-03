@@ -106,6 +106,10 @@ const LocationInputPage = () => {
   const [recentLocations, setRecentLocations] = useState([]);
   const [inputFocus, setInputFocus] = useState(false);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
+  // Tracks whether the address input failed validation on submit (controls red border)
+  const [addressValidationFailed, setAddressValidationFailed] = useState(false);
+  // True after user explicitly denied GPS permission
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
 
   // Get selected service from navigation state or booking context
   const selectedService =
@@ -170,13 +174,13 @@ const LocationInputPage = () => {
   );
 
   // Handle place selection from autocomplete
-  const handlePlaceSelect = useCallback(
-    (place) => {
-      setLocationData(place);
-      setError(place ? null : t("error_valid_address"));
-    },
-    [t]
-  );
+  const handlePlaceSelect = useCallback((place) => {
+    setLocationData(place);
+    if (place) {
+      setError(null);
+      setAddressValidationFailed(false);
+    }
+  }, []);
 
   // Handle recent location selection
   const handleRecentLocationSelect = useCallback((location) => {
@@ -192,8 +196,10 @@ const LocationInputPage = () => {
   
       if (!locationData) {
         setError(t("error_valid_address"));
+        setAddressValidationFailed(true);
         return;
       }
+      setAddressValidationFailed(false);
   
       setLoading(true);
       try {
@@ -392,9 +398,9 @@ const LocationInputPage = () => {
     } catch (err) {
       console.error("Detection error:", err);
 
-      // More specific error messages
       if (err.message === "location_permission_denied") {
-        setError(t("error_location_permission_denied"));
+        // Don't show a generic error — the detect section shows a friendly fallback UI instead
+        setGpsPermissionDenied(true);
       } else if (err.message === "location_unavailable") {
         setError(t("error_location_unavailable"));
       } else if (err.message === "location_timeout") {
@@ -559,7 +565,7 @@ const LocationInputPage = () => {
                   {/* Input Field */}
                   <div
                     className={`flex items-center border-2 rounded-xl overflow-hidden transition-colors duration-300 focus-within:ring-2 focus-within:ring-teal-300 focus-within:border-teal-500 ${
-                      error
+                      addressValidationFailed
                         ? "border-red-400"
                         : inputFocus
                         ? "border-teal-400"
@@ -611,6 +617,7 @@ const LocationInputPage = () => {
                           setInputValue("");
                           setLocationData(null);
                           setError(null);
+                          setAddressValidationFailed(false);
                         }}
                         className="pr-3 text-gray-400 hover:text-gray-600 focus:outline-none"
                         aria-label="Clear input"
@@ -685,36 +692,46 @@ const LocationInputPage = () => {
                 {/* Geolocation / Popular / Recent Sections */}
                 {isLoaded && !inputFocus && !locationData && !detectLoading && (
                   <div className="mt-4">
-                    {/* Geolocation Button */}
-                    <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start">
-                      <Navigation
-                        className="text-blue-500 mr-3 mt-1 flex-shrink-0"
-                        size={20}
-                      />
-                      <div>
-                        <div className="font-medium text-gray-800 mb-1">
-                          Use current location?
+                    {gpsPermissionDenied ? (
+                      /* GPS was denied — guide the user to type manually */
+                      <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start">
+                        <AlertCircle
+                          className="text-amber-500 mr-3 mt-0.5 flex-shrink-0"
+                          size={20}
+                        />
+                        <div>
+                          <div className="font-medium text-gray-800 mb-1">
+                            Location access denied
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            No problem — just type your address or postal code
+                            in the search box above to continue.
+                          </p>
                         </div>
-                        <button
-                          className="text-sm text-blue-600 font-medium flex items-center hover:text-blue-700 disabled:opacity-60 disabled:cursor-wait"
-                          onClick={handleDetect}
-                          disabled={detectLoading || !isLoaded}
-                          aria-label="Detect my current location"
-                        >
-                          {detectLoading ? (
-                            <>
-                              <Loader className="w-4 h-4 mr-1.5 animate-spin" />
-                              Detecting...
-                            </>
-                          ) : (
-                            <>
-                              <CornerDownRight size={16} className="mr-1" />
-                              Detect Location
-                            </>
-                          )}
-                        </button>
                       </div>
-                    </div>
+                    ) : (
+                      /* Normal detect button */
+                      <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start">
+                        <Navigation
+                          className="text-blue-500 mr-3 mt-1 flex-shrink-0"
+                          size={20}
+                        />
+                        <div>
+                          <div className="font-medium text-gray-800 mb-1">
+                            Use current location?
+                          </div>
+                          <button
+                            className="text-sm text-blue-600 font-medium flex items-center hover:text-blue-700 disabled:opacity-60 disabled:cursor-wait"
+                            onClick={handleDetect}
+                            disabled={detectLoading || !isLoaded}
+                            aria-label="Detect my current location"
+                          >
+                            <CornerDownRight size={16} className="mr-1" />
+                            Detect Location
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Recent & Popular */}
                     <RecentSearches
