@@ -7,7 +7,7 @@ const path = require('path');
 const os = require('os');
 
 // Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 // Server configuration
 const portString = process.env.PORT || '5002';

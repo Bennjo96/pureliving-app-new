@@ -12,7 +12,7 @@ router.use((req, res, next) => {
     return next();
   }
   // Apply admin middleware for all other routes
-  express.Router().use(adminMiddleware)(req, res, next);
+  adminMiddleware(req, res, next);
 });
 
 // Dashboard Routes

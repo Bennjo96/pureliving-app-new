@@ -270,7 +270,7 @@ export const adminService = {
   // Booking Management
   getBookings: () => api.get("/admin/bookings"),
   updateBookingStatus: (bookingId, status) => api.put(`/admin/bookings/${bookingId}`, { status }),
-  assignCleaner: (bookingId, cleanerId) => api.put(`/admin/bookings/${bookingId}/assign`, { cleanerId }),
+  assignCleaner: (bookingId, cleanerId) => api.post(`/admin/bookings/assign-cleaner`, { bookingId, cleanerId }),
   getAvailableCleaners: () => api.get("/admin/cleaners/available"),
 
   // Analytics and Payments
@@ -318,11 +318,11 @@ export const bookingService = {
   cancelBooking: (bookingId) => api.put(`/bookings/${bookingId}/cancel`),
   
   // Customer bookings
-  getMyBookings: () => api.get("/bookings/my-bookings"),
+  getMyBookings: () => api.get("/bookings/user"),
   rateBooking: (bookingId, rating, review) => api.post(`/bookings/${bookingId}/review`, { rating, review }),
-  
+
   // Payment processing
-  processPayment: (bookingId, paymentDetails) => api.post(`/payments/process/${bookingId}`, paymentDetails),
+  processPayment: (bookingId, paymentDetails) => api.post(`/bookings/${bookingId}/process-payment`, paymentDetails),
   
   // Location and availability
   checkServiceAvailability: (postalCode) => api.get(`/bookings/availability/${postalCode}`),

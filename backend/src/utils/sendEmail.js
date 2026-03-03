@@ -2,31 +2,22 @@
 const nodemailer = require('nodemailer');
 
 const sendEmail = async (options) => {
+  // Gracefully skip email when SMTP is not configured
+  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USERNAME || !process.env.EMAIL_PASSWORD) {
+    console.warn('Email not configured (missing EMAIL_HOST/EMAIL_USERNAME/EMAIL_PASSWORD). Skipping email send.');
+    return null;
+  }
+
   try {
-    // Log environment variables for debugging
-    console.log('Email configuration:');
-    console.log(`Host: ${process.env.EMAIL_HOST}`);
-    console.log(`Port: ${process.env.EMAIL_PORT}`);
-    console.log(`Username: ${process.env.EMAIL_USERNAME}`);
-    console.log(`From: ${process.env.EMAIL_FROM}`);
-    
-    // Create transporter with more detailed configuration
     const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: false, // true for 465, false for other ports
+      port: parseInt(process.env.EMAIL_PORT, 10) || 587,
+      secure: false,
       auth: {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD
-      },
-      debug: true, // Keep for debugging
-      logger: true  // Keep for debugging
+      }
     });
-
-    // Verify connection configuration
-    console.log('Verifying email transport configuration...');
-    await transporter.verify();
-    console.log('Email transport verification successful');
 
     // Accept either options.email or options.to for recipient
     const recipient = options.email || options.to;
@@ -35,16 +26,15 @@ const sendEmail = async (options) => {
     }
 
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'PureLiving'}" <${process.env.EMAIL_FROM}>`,
+      from: `"${process.env.EMAIL_FROM_NAME || 'PureLiving'}" <${process.env.EMAIL_FROM || process.env.EMAIL_USERNAME}>`,
       to: recipient,
       subject: options.subject,
       text: options.text || options.message,
       html: options.html || (options.message && options.message.replace(/\n/g, '<br>'))
     };
 
-    console.log(`Sending email to: ${recipient}`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent successfully, ID: ${info.messageId}`);
+    console.log(`Email sent to ${recipient}, ID: ${info.messageId}`);
     return info;
   } catch (error) {
     console.error('Email sending error:', error);

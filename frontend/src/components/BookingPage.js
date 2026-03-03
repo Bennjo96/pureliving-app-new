@@ -375,6 +375,8 @@ const BookingPage = () => {
     setCustomerDetails,
     calculateTotal,
     nextStep,
+    updateBooking,
+    startBooking,
   } = useBooking();
 
   // Extract information from the routing state or bookingContext

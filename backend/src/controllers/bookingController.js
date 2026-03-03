@@ -432,11 +432,12 @@ exports.getAvailableTimeSlots = async (req, res) => {
     }
     
     // Get all bookings for the selected date
+    const dayStart = new Date(selectedDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(selectedDate);
+    dayEnd.setHours(23, 59, 59, 999);
     const bookings = await Booking.find({
-      date: {
-        $gte: new Date(selectedDate.setHours(0, 0, 0)),
-        $lt: new Date(selectedDate.setHours(23, 59, 59))
-      },
+      date: { $gte: dayStart, $lt: dayEnd },
       status: { $nin: ['cancelled'] }
     }).select('time duration cleaner');
     
@@ -537,11 +538,12 @@ exports.getAvailableCleaners = async (req, res) => {
       .select('name email rating bio profilePicture services availability');
     
     // Get all bookings for the selected date and time
+    const dayStart2 = new Date(bookingDate);
+    dayStart2.setHours(0, 0, 0, 0);
+    const dayEnd2 = new Date(bookingDate);
+    dayEnd2.setHours(23, 59, 59, 999);
     const existingBookings = await Booking.find({
-      date: {
-        $gte: new Date(bookingDate.setHours(0, 0, 0)),
-        $lt: new Date(bookingDate.setHours(23, 59, 59))
-      },
+      date: { $gte: dayStart2, $lt: dayEnd2 },
       status: { $nin: ['cancelled'] }
     }).select('time duration cleaner');
     
@@ -715,9 +717,9 @@ exports.processPaymentAndAssign = async (req, res) => {
     
     // Update booking to paid status
     booking.status = 'paid';
-    booking.paymentMethod = paymentMethod;
-    booking.paymentDetails = paymentDetails || {};
-    booking.paymentDate = new Date();
+    booking.payment.method = paymentMethod;
+    booking.payment.status = 'paid';
+    booking.payment.paidAt = new Date();
     
     await booking.save();
     

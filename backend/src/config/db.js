@@ -15,7 +15,7 @@ const connectDB = async () => {
     };
 
     // Connect to MongoDB
-    const conn = await mongoose.connect(process.env.MONGODB_URI, connectionOptions);
+    const conn = await mongoose.connect(process.env.MONGO_URI, connectionOptions);
 
     // Log connection details
     console.log(`
@@ -44,7 +44,7 @@ const connectDB = async () => {
     console.error(`
       ❌ Failed to Connect to MongoDB:
       Error: ${error.message}
-      URI: ${process.env.MONGODB_URI ? process.env.MONGODB_URI.replace(/:[^:]*@/, ':****@') : 'Not provided'}
+      URI: ${process.env.MONGO_URI ? process.env.MONGO_URI.replace(/:[^:]*@/, ':****@') : 'Not provided'}
     `);
 
     // Advanced error handling
@@ -57,7 +57,13 @@ const connectDB = async () => {
     // Optional: Send error to monitoring service
     // sendErrorToMonitoringService(error);
 
-    // Exit process with failure
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    if (nodeEnv === 'development') {
+      console.error('⚠️  Development mode: continuing startup with database status DOWN.');
+      return null;
+    }
+
+    // Exit process with failure in non-development environments
     process.exit(1);
   }
 };

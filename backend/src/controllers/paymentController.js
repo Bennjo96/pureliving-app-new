@@ -57,9 +57,10 @@ exports.processPayment = async (req, res) => {
     await payment.save();
     
     // Update booking payment status
-    booking.paymentStatus = 'paid';
-    booking.paymentId = payment._id;
-    booking.paymentDate = new Date();
+    booking.payment.status = 'paid';
+    booking.payment.method = paymentMethod === 'card' ? 'credit_card' : paymentMethod;
+    booking.payment.transactionId = payment.transactionId;
+    booking.payment.paidAt = new Date();
     
     await booking.save();
     
@@ -121,10 +122,7 @@ exports.verifyPayment = async (req, res) => {
     if (paymentId) {
       payment = await Payment.findOne({ transactionId: paymentId });
     } else {
-      const booking = await Booking.findById(bookingId);
-      if (booking && booking.paymentId) {
-        payment = await Payment.findById(booking.paymentId);
-      }
+      payment = await Payment.findOne({ booking: bookingId });
     }
     
     if (!payment) {

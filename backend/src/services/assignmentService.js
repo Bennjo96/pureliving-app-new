@@ -30,18 +30,20 @@ const assignmentService = {
       
       // Get service area for this booking
       let serviceArea = null;
-      if (booking.address && booking.address.postalCode) {
-        serviceArea = await ServiceArea.findByPostalCode(booking.address.postalCode);
+      const bookingZipCode = booking.address && booking.address.zipCode;
+      if (bookingZipCode) {
+        serviceArea = await ServiceArea.findByPostalCode(bookingZipCode);
       }
-      
+
       // If no service area found, we can't proceed with assignment
       if (!serviceArea) {
-        console.log(`No service area found for postal code ${booking.address.postalCode}`);
+        console.log(`No service area found for postal code ${bookingZipCode}`);
         return null;
       }
-      
-      // Extract coordinates
+
+      // Extract coordinates and attach zipCode so getQualifiedCleaners can use it
       const locationCoords = geoUtils.extractCoordinates(serviceArea.coordinates);
+      locationCoords.postalCode = bookingZipCode;
       
       // Format date and time for availability checking
       const bookingDate = new Date(booking.date);

@@ -1,6 +1,7 @@
 // src/app.js
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
 const errorHandler = require("./middlewares/errorHandler");
 const fs = require('fs');
 const path = require('path');
@@ -27,9 +28,22 @@ app.use(express.json());
 
 // Health check route
 app.get('/health', (req, res) => {
+  const readyStateMap = {
+    0: 'down',
+    1: 'up',
+    2: 'connecting',
+    3: 'disconnecting',
+  };
+  const dbStateCode = mongoose.connection.readyState;
+  const dbStatus = readyStateMap[dbStateCode] || 'unknown';
+
   res.status(200).json({
     status: 'success',
     message: 'Server is running',
+    db: {
+      status: dbStatus,
+      readyState: dbStateCode
+    },
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
