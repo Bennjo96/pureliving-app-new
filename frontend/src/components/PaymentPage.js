@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useBooking } from "../contexts/BookingContext";
 import { useAuth } from "../contexts/AuthContext";
+import { paymentService, bookingService } from "../api/api";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -28,10 +29,8 @@ import {
   ToggleRight,
 } from "lucide-react";
 
-// Initialize Stripe (use test key for now)
-const stripePromise = loadStripe(
-  process.env.REACT_APP_STRIPE_PUBLIC_KEY || "pk_test_51234567890"
-);
+// Initialize Stripe — reads REACT_APP_STRIPE_PUBLISHABLE_KEY from frontend/.env
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || "");
 
 // Progress Steps Component
 const ProgressSteps = ({ currentStep }) => {
@@ -309,7 +308,11 @@ const CheckoutForm = ({
   const elements = useElements();
 
   const processStripePayment = async () => {
-    if (!stripe || !elements) return;
+    if (!stripe || !elements) {
+      return handlePayment(async () => {
+        throw new Error("Stripe has not loaded yet. Please refresh the page and try again.");
+      });
+    }
 
     const card = elements.getElement(CardElement);
     if (!card) return;
@@ -319,9 +322,11 @@ const CheckoutForm = ({
         clientSecret,
         {
           payment_method: {
-            card: card,
+            card,
             billing_details: {
-              name: bookingData?.customer?.name || "Customer",
+              name: bookingData?.customer?.firstName
+                ? `${bookingData.customer.firstName} ${bookingData.customer.lastName || ""}`.trim()
+                : "Customer",
               email: bookingData?.customer?.email || undefined,
             },
           },
@@ -329,7 +334,14 @@ const CheckoutForm = ({
       );
 
       if (error) {
+        // Stripe errors already have user-friendly messages
         throw new Error(error.message);
+      }
+
+      if (paymentIntent.status !== "succeeded") {
+        throw new Error(
+          `Payment ${paymentIntent.status}. Please try again or contact support.`
+        );
       }
 
       return {
@@ -392,7 +404,7 @@ const processMVPPayment = async (paymentData) => {
 const PaymentPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { bookingData, calculateTotal, completeBooking } = useBooking();
+  const { bookingData, completeBooking, createBooking } = useBooking();
   const { isAuthenticated } = useAuth();
 
   // MVP Mode Toggle
@@ -483,6 +495,21 @@ const PaymentPage = () => {
     }
   }, [selectedService, selectedLocation, dateTime, navigate]);
 
+  // In live (non-test) mode, ensure the booking is created on the backend before payment
+  useEffect(() => {
+    if (isTestMode) return;
+    if (bookingData.bookingId) return; // already created
+    if (!selectedService || !selectedLocation || !dateTime) return;
+
+    createBooking().catch((err) => {
+      console.error("Failed to pre-create booking:", err);
+      setPaymentError(
+        "We couldn't initialise your booking. Please go back and try again."
+      );
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMode]);
+
   // Reset payment error when payment method changes
   useEffect(() => {
     setPaymentError(null);
@@ -551,27 +578,21 @@ const PaymentPage = () => {
       } else {
         // Real Payment Processing
         if (paymentMethod === "card" && stripePaymentProcessor) {
-          // Create payment intent on backend
-          const intentResponse = await fetch("/api/payments/create-intent", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-            body: JSON.stringify({
-              amount: Math.round(subtotal * 100), // Convert to cents
-              bookingId: bookingData?._id,
-              currency: "EUR",
-            }),
-          });
-
-          if (!intentResponse.ok) {
-            throw new Error("Failed to create payment intent");
+          // 1. Create a payment intent on the backend
+          let intentResponse;
+          try {
+            intentResponse = await paymentService.createStripePaymentIntent(
+              bookingData?.bookingId,
+              subtotal
+            );
+          } catch {
+            throw new Error(
+              "We couldn't connect to the payment processor. Please check your connection and try again."
+            );
           }
+          const { clientSecret } = intentResponse.data;
 
-          const { clientSecret } = await intentResponse.json();
-
-          // Process payment with Stripe
+          // 2. Confirm the payment client-side with Stripe.js
           paymentResult = await stripePaymentProcessor(clientSecret);
         }
       }
@@ -638,40 +659,25 @@ const PaymentPage = () => {
           },
         });
       } else {
-        // Real backend call
-        const bookingCompleteResponse = await fetch(
-          `/api/bookings/${bookingData?._id || "new"}/process-payment`,
+        // Real backend call — notify backend of confirmed payment and trigger assignment
+        const bookingApiResponse = await bookingService.processPayment(
+          bookingData?.bookingId,
           {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            paymentMethod,
+            paymentDetails: {
+              transactionId: paymentResult.transactionId,
+              paymentIntentId: paymentResult.transactionId, // Stripe paymentIntent.id
+              paypalOrderId: paymentResult.paypalOrderId,   // PayPal order ID if applicable
+              status: paymentResult.status,
+              isTestMode: false,
             },
-            body: JSON.stringify({
-              paymentMethod,
-              paymentDetails: {
-                transactionId: paymentResult.transactionId,
-                status: paymentResult.status,
-                isTestMode: isTestMode,
-              },
-              bookingDetails: {
-                service: safeService,
-                location: selectedLocation,
-                dateTime: dateTime,
-                frequency: frequency,
-                apartmentSize: apartmentSize,
-                total: subtotal,
-              },
-            }),
           }
         );
 
-        const bookingResponse = await bookingCompleteResponse.json();
+        const bookingResponse = bookingApiResponse.data;
 
         if (!bookingResponse.success) {
-          throw new Error(
-            bookingResponse.message || "Booking completion failed"
-          );
+          throw new Error(bookingResponse.message || "Booking completion failed");
         }
 
         // Store booking data in sessionStorage as backup
@@ -698,44 +704,33 @@ const PaymentPage = () => {
       }
     } catch (error) {
       console.error("Payment processing error:", error);
+      // Stripe errors already contain user-friendly text; fall back to a generic message otherwise
+      const msg = error?.message || "";
       setPaymentError(
-        error.message || "There was an error processing your payment."
+        msg.length > 0 && msg.length < 200
+          ? msg
+          : "Something went wrong while processing your payment. Please try again or use a different payment method."
       );
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // PayPal create order
-  const createPayPalOrder = (data, actions) => {
-    if (isTestMode) {
-      // Simulate PayPal order creation in test mode
-      return actions.order.create({
-        purchase_units: [
-          {
-            amount: {
-              value: subtotal.toFixed(2),
-              currency_code: "EUR",
-            },
+  // PayPal create order — must be async so we can await in live mode
+  const createPayPalOrder = async (data, actions) => {
+    // Both test and live mode: create the order client-side via the PayPal SDK.
+    // The SDK handles sandboxing automatically based on the client-id env.
+    return actions.order.create({
+      purchase_units: [
+        {
+          amount: {
+            value: subtotal.toFixed(2),
+            currency_code: "EUR",
           },
-        ],
-      });
-    }
-
-    // Real PayPal order creation would go through your backend
-    return fetch("/api/payments/create-paypal-order", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: JSON.stringify({
-        amount: subtotal,
-        bookingId: bookingData?._id,
-      }),
-    })
-      .then((response) => response.json())
-      .then((order) => order.id);
+          description: selectedService?.title || "Cleaning Service",
+        },
+      ],
+    });
   };
 
   // PayPal approve order
@@ -744,14 +739,20 @@ const PaymentPage = () => {
     try {
       const order = await actions.order.capture();
 
+      // Notify the backend with the captured PayPal order ID
       await handleSubmitPayment(async () => ({
         id: order.id,
         transactionId: order.id,
+        paypalOrderId: order.id,
         status: "completed",
         paymentMethod: "paypal",
       }));
     } catch (error) {
-      setPaymentError("PayPal payment failed. Please try again.");
+      console.error("PayPal error:", error);
+      setPaymentError(
+        "Your PayPal payment could not be completed. " +
+        "No money has been charged. Please try again or choose a different payment method."
+      );
       setIsProcessing(false);
     }
   };

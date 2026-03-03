@@ -7,6 +7,10 @@ const { protect } = require('../middlewares/authMiddleware');
 // Protected routes
 router.use(protect);
 
+// Stripe & PayPal payment initiation
+router.post('/create-intent', paymentController.createStripeIntent);
+router.post('/create-paypal-order', paymentController.createPayPalOrder);
+
 // Process payments
 router.post('/process', paymentController.processPayment);
 router.post('/verify-payment', paymentController.verifyPayment);

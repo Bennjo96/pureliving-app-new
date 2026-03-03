@@ -1,7 +1,95 @@
 // src/controllers/paymentController.js
 const User = require('../models/User');
 const Booking = require('../models/Booking');
-const Payment = require('../models/Payment'); // You might need to create this model
+const Payment = require('../models/Payment');
+
+// Stripe is initialised lazily so the server can still start if the key is missing
+let stripe;
+const getStripe = () => {
+  if (!stripe) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
+    }
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  }
+  return stripe;
+};
+
+// Create a Stripe payment intent
+// POST /api/payments/create-intent
+exports.createStripeIntent = async (req, res) => {
+  try {
+    const { bookingId, amount, currency = 'EUR' } = req.body;
+    const userId = req.user.id;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'A valid amount is required' });
+    }
+
+    // If a bookingId is provided, verify the booking belongs to this user
+    if (bookingId) {
+      const booking = await Booking.findOne({ _id: bookingId, user: userId });
+      if (!booking) {
+        return res.status(404).json({ success: false, message: 'Booking not found' });
+      }
+    }
+
+    const paymentIntent = await getStripe().paymentIntents.create({
+      amount,             // already in cents (frontend sends Math.round(subtotal * 100))
+      currency: currency.toLowerCase(),
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        bookingId: bookingId ? String(bookingId) : '',
+        userId: String(userId),
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+    });
+  } catch (error) {
+    console.error('Error creating Stripe payment intent:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create payment intent',
+    });
+  }
+};
+
+// Create a PayPal order (backend-side, optional — frontend can also do this via SDK)
+// POST /api/payments/create-paypal-order
+exports.createPayPalOrder = async (req, res) => {
+  try {
+    const { bookingId, amount } = req.body;
+    const userId = req.user.id;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'A valid amount is required' });
+    }
+
+    if (bookingId) {
+      const booking = await Booking.findOne({ _id: bookingId, user: userId });
+      if (!booking) {
+        return res.status(404).json({ success: false, message: 'Booking not found' });
+      }
+    }
+
+    // The PayPal JavaScript SDK handles order creation client-side in most cases.
+    // This endpoint exists for server-side order creation if needed in production.
+    // For now return the order details so the frontend can proceed.
+    return res.status(200).json({
+      success: true,
+      amount: Number(amount).toFixed(2),
+      currency: 'EUR',
+      bookingId,
+    });
+  } catch (error) {
+    console.error('Error creating PayPal order:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create PayPal order' });
+  }
+};
 
 // Process payment for a booking
 exports.processPayment = async (req, res) => {

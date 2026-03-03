@@ -261,33 +261,40 @@ export const BookingProvider = ({ children }) => {
   const createBooking = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      // Prepare booking payload
+      const { service, location, dateTime, apartmentSize, customizations, pricing, customer } = bookingData;
+
+      // Map apartment size to approximate duration in hours
+      const durationMap = { '50': 2, '80': 3, '120': 4, '150+': 5 };
+      const duration = durationMap[apartmentSize] || 3;
+
+      // Build the address object the backend schema requires
+      const streetParts = [location?.streetName, location?.streetNumber].filter(Boolean);
+      const street = streetParts.length > 0
+        ? streetParts.join(' ')
+        : (location?.formattedAddress || 'Address not specified');
+
       const payload = {
-        // Service info
-        serviceId: bookingData.service?.id,
-        serviceName: bookingData.service?.title,
-        
-        // Customizations
-        customizations: bookingData.customizations,
-        
-        // Location
-        location: bookingData.location,
-        
-        // Schedule
-        dateTime: bookingData.dateTime,
-        frequency: bookingData.frequency,
-        apartmentSize: bookingData.apartmentSize,
-        
-        // Customer
-        customer: bookingData.customer,
-        
-        // Pricing
-        pricing: bookingData.pricing,
-        
-        // Don't include cleaner - will be auto-assigned
-        status: 'pending_payment'
+        // Core required fields — match backend Booking schema
+        service: service?.title,
+        date: dateTime?.date,
+        time: dateTime?.time,
+        duration,
+        address: {
+          street,
+          city: location?.cityName || 'Unknown',
+          state: 'Germany',
+          zipCode: location?.postalCode || '00000',
+          additionalInfo: location?.accessInstructions || customizations?.specialRequests || '',
+        },
+        notes: customizations?.specialRequests || '',
+
+        // Pricing (backend uses this to set booking.price)
+        pricing,
+
+        // Customer contact details
+        customer,
       };
       
       const response = await bookingService.createBooking(payload);
@@ -560,6 +567,7 @@ export const BookingProvider = ({ children }) => {
     setDateTime: (date, time, flexible = false) => {
       setSchedule({ dateTime: { date, time, flexible } });
     },
+    calculateTotal: calculatePricing,
     currentBooking: bookingData,
     startBooking: resetBooking
   };

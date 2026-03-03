@@ -697,30 +697,68 @@ exports.processPaymentAndAssign = async (req, res) => {
       });
     }
     
-    if (booking.status !== 'pending') {
+    // Accept both 'pending' (just created) and 'pending_payment' (context-created draft)
+    const acceptableStatuses = ['pending', 'pending_payment', 'unassigned'];
+    if (!acceptableStatuses.includes(booking.status)) {
       return res.status(400).json({
         success: false,
-        message: `Booking is already in ${booking.status} status and cannot be processed for payment`
+        message: `Booking is already in '${booking.status}' status and cannot be processed for payment`
       });
     }
-    
-    // Process payment - this is a placeholder
-    // In a real implementation, you would integrate with a payment gateway
-    const paymentSuccessful = true; // Assume payment success for now
-    
-    if (!paymentSuccessful) {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment processing failed'
-      });
+
+    // ── Stripe verification ─────────────────────────────────────────────────
+    const { paymentIntentId, paypalOrderId, transactionId: manualTxId, isTestMode } = paymentDetails || {};
+
+    // Map payment method to Booking schema enum values
+    const methodMap = {
+      card: 'credit_card',
+      paypal: 'paypal',
+      cash: 'cash',
+    };
+    const storedMethod = methodMap[paymentMethod] || 'credit_card';
+
+    let resolvedTransactionId = manualTxId || paymentIntentId || paypalOrderId
+      || ('TXN_' + Math.floor(100000 + Math.random() * 900000));
+
+    // In live mode, verify the Stripe payment intent actually succeeded
+    if (!isTestMode && paymentIntentId && process.env.STRIPE_SECRET_KEY) {
+      try {
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        if (intent.status !== 'succeeded') {
+          return res.status(400).json({
+            success: false,
+            message: `Stripe payment is not confirmed (status: ${intent.status}). Please complete payment first.`,
+          });
+        }
+        resolvedTransactionId = intent.id;
+      } catch (stripeErr) {
+        console.error('Stripe verification error:', stripeErr);
+        return res.status(400).json({
+          success: false,
+          message: 'Could not verify payment with Stripe. Please try again.',
+        });
+      }
     }
-    
-    // Update booking to paid status
+
+    // Create a Payment document
+    const Payment = require('../models/Payment');
+    await Payment.create({
+      booking: booking._id,
+      user: userId,
+      amount: booking.price,
+      paymentMethod: storedMethod,
+      status: 'completed',
+      transactionId: resolvedTransactionId,
+    });
+
+    // Update booking payment sub-doc and status
     booking.status = 'paid';
-    booking.payment.method = paymentMethod;
+    booking.payment.method = storedMethod;
     booking.payment.status = 'paid';
+    booking.payment.transactionId = resolvedTransactionId;
     booking.payment.paidAt = new Date();
-    
+
     await booking.save();
     
     // Try to assign a cleaner automatically
@@ -753,14 +791,15 @@ exports.processPaymentAndAssign = async (req, res) => {
         success: true,
         message: 'Payment processed and cleaner assigned successfully',
         data: {
+          booking: updatedBooking,
           bookingId: updatedBooking._id,
           status: updatedBooking.status,
           cleaner: {
             id: bestCleaner._id,
             name: bestCleaner.name,
-            rating: bestCleaner.rating || 0
-          }
-        }
+            rating: bestCleaner.rating || 0,
+          },
+        },
       });
     } catch (error) {
       console.error('Error in automatic assignment:', error);
